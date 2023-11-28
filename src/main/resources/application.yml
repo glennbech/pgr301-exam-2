@@ -1,0 +1,19 @@
+logging:
+  level:
+    io: 
+      micrometer:
+        cloudwatch2: DEBUG
+management:
+  metrics:
+    export:
+      cloudwatch:
+        namespace: candidate-2042-metrics
+        enabled: true
+        step: 1m
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+    logfile: 
+      enabled: true
