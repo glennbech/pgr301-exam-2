@@ -1,0 +1,110 @@
+name: Build and push spring-boot docker image
+
+on:
+  push:
+    branches:
+      - '**'
+    paths: 
+      - 'src/**'
+      - '.github/workflows/springboot-pipeline.yml'
+      - 'infra/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: JDK setup
+      uses: actions/setup-java@v2
+      with:
+        distribution: 'adopt'
+        java-version: '11'
+
+    - name: Maven package
+      run: mvn clean package -DskipTests
+      
+  build_and_push_docker:
+    name: Build and publish docker image to ECR
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    
+      - name: Checkout repository
+        uses: actions/checkout@v2
+    
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+  
+      - name: ECR login
+        uses: aws-actions/amazon-ecr-login@v2    
+    
+      - name: Build docker image
+        run: |
+          docker build -t ${{ secrets.AWS_ECR_REGISTRY }} .
+  
+      - name: Tag docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag ${{ secrets.AWS_ECR_REGISTRY }} ${{ secrets.AWS_ECR_REGISTRY }}:candidate-2042-${{ github.sha }}
+  
+      - name: Delete prior :latest images
+        if: github.ref == 'refs/heads/main'
+        run: |
+          existing_latest=$(aws ecr describe-images --repository-name candidate-2042 --filter tagStatus=TAGGED --query 'images[?contains(imageTags, `latest`)].imageDigest' --output text)
+          if [ -n "$existing_latest" ]; then
+            aws ecr batch-delete-image --repository-name candidate-2042 --image-ids imageDigest=$existing_latest
+          fi
+  
+      - name: Push docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ secrets.AWS_ECR_REGISTRY }}:candidate-2042-${{ github.sha }}
+          docker push ${{ secrets.AWS_ECR_REGISTRY }}
+
+  terraform:
+    name: "Terraform"
+    needs: build_and_push_docker
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: eu-west-1
+      APPRUNNER_SERVICENAME: candidate-2042
+      ECR_REPOSITORY_URL: ${{ secrets.AWS_ECR_REGISTRY }}
+      DOCKER_IMAGE_TAG: latest
+    
+    steps: 
+    - uses: actions/checkout@v3
+    
+    - name: Terraform setup
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Terraform Init
+      id: init
+      run: |
+        cd infra
+        terraform init
+
+    - name: Terraform Plan
+      id: plan
+      run: |
+        cd infra
+        terraform plan   -var="apprunner_servicename=$APPRUNNER_SERVICENAME" -var="ecr_repository_url=$ECR_REPOSITORY_URL" -var="docker_image_tag=$DOCKER_IMAGE_TAG" -no-color
+      continue-on-error: true
+      
+    - name: Terraform Plan Status
+      if: steps.plan.outcome == 'failure'
+      run: exit 
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        cd infra
+        terraform apply -var="apprunner_servicename=$APPRUNNER_SERVICENAME" -var="ecr_repository_url=$ECR_REPOSITORY_URL" -var="docker_image_tag=$DOCKER_IMAGE_TAG"  -auto-approve
