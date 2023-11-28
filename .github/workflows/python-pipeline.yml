@@ -1,0 +1,42 @@
+name: SAM build and deploy python lambda function 
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+    paths: 
+      - 'kjell/**'
+      - '.github/workflows/python-pipeline.yml'
+
+defaults:
+  run:
+    working-directory: ./kjell
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        
+      - name: Python setup
+        uses: actions/setup-python@v2
+
+      - name: SAM setup
+        uses: aws-actions/setup-sam@v1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+          
+      - name: Build solution
+        run: sam build --use-container
+      
+      - name: Deploy solution
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name candidate-2042 --s3-bucket ${{ secrets.BUCKET_NAME }} --capabilities CAPABILITY_IAM --region eu-west-1 --parameter-overrides BUCKET=${{ secrets.BUCKET_NAME }}
