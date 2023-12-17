@@ -67,6 +67,7 @@ jobs:
         run: |
           docker push ${{ secrets.AWS_ECR_REGISTRY }}:candidate-2042-${{ github.sha }}
           docker push ${{ secrets.AWS_ECR_REGISTRY }}
+          
 
   terraform:
     name: "Terraform"

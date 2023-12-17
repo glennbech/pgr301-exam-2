@@ -39,4 +39,4 @@ jobs:
       - name: Deploy solution
         if: github.ref == 'refs/heads/main'
         run: |
-          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name candidate-2042 --s3-bucket ${{ secrets.BUCKET_NAME }} --capabilities CAPABILITY_IAM --region eu-west-1 --parameter-overrides BUCKET=${{ secrets.BUCKET_NAME }}
+          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name candidate-2042s --s3-bucket ${{ secrets.BUCKET_NAME }} --capabilities CAPABILITY_IAM --region eu-west-1 --parameter-overrides BUCKET=${{ secrets.BUCKET_NAME }}
